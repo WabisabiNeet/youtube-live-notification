@@ -102,19 +102,19 @@ func main() {
 	}
 	fmt.Println("Labels:")
 
-	socialLabelId := ""
+	socialLabelID := ""
 	for _, l := range r.Labels {
 		if l.Name != "CATEGORY_SOCIAL" {
 			continue
 		}
-		socialLabelId = l.Id
+		socialLabelID = l.Id
 	}
-	if socialLabelId == "" {
+	if socialLabelID == "" {
 		fmt.Println("CATEGORY_SOCIAL can not found.")
 		return
 	}
 
-	messages, _ := srv.Users.Messages.List("me").LabelIds(socialLabelId).Do()
+	messages, _ := srv.Users.Messages.List("me").LabelIds(socialLabelID).Do()
 	for i, m := range messages.Messages {
 		if i > 0 {
 			return
