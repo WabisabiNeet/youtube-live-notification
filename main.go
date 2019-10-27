@@ -7,10 +7,12 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/jhillyerd/enmime"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
@@ -100,7 +102,6 @@ func main() {
 		fmt.Println("No labels found.")
 		return
 	}
-	fmt.Println("Labels:")
 
 	socialLabelID := ""
 	for _, l := range r.Labels {
@@ -115,37 +116,80 @@ func main() {
 	}
 
 	messages, _ := srv.Users.Messages.List("me").LabelIds(socialLabelID).Do()
-	for i, m := range messages.Messages {
-		if i > 0 {
-			return
-		}
-
+	for _, m := range messages.Messages {
 		mm, _ := srv.Users.Messages.Get("me", m.Id).Format("raw").Do()
 
 		// アーカイブが最大12時間だから、開始時は余裕もって13時間前までのメールをチェックする
 		fmt.Println(time.Unix(mm.InternalDate/1000, 0))
 
-		html, err := getHTMLString(mm.Raw)
+		html, err := getLiveStreamHTML(mm.Raw)
 		if err != nil {
 			fmt.Println(err)
-			return
+			continue
 		}
-		fmt.Println(html)
+
+		stringReader := strings.NewReader(html)
+		doc, err := goquery.NewDocumentFromReader(stringReader)
+		if err != nil {
+			fmt.Print("scarapping failed")
+			continue
+		}
+
+		liveURL := ""
+		sss := doc.Find("a")
+		sss.EachWithBreak(func(_ int, s *goquery.Selection) bool {
+			url, exists := s.Attr("href")
+			if !exists || !strings.Contains(url, "watch") {
+				return true
+			}
+
+			liveURL = url
+			return false
+		})
+
+		vid, err := getVideoID(liveURL)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		fmt.Println(vid)
 	}
 }
 
-func getHTMLString(src string) (string, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(src)
+func getLiveStreamHTML(src string) (string, error) {
+	decoded, err := base64.URLEncoding.DecodeString(src)
 	if err != nil {
 		fmt.Println(err)
 		return "", err
 	}
-	fmt.Println(string(decoded))
+
 	enve, err := enmime.ReadEnvelope(strings.NewReader(string(decoded)))
 	if err != nil {
 		fmt.Println(err)
 		return "", err
 	}
-	fmt.Println(enve.HTML)
+
+	header := enve.GetHeader("Subject")
+	fmt.Println(header)
+	if !strings.Contains(header, "ライブ配信中です") {
+		return "", fmt.Errorf("not live stream mail")
+	}
+
 	return enve.HTML, nil
+}
+
+func getVideoID(liveURL string) (string, error) {
+	u, err := url.Parse(liveURL)
+	if err != nil {
+		return "", err
+	}
+	fmt.Println(u)
+	fmt.Println(u.Query().Get("u"))
+
+	u, err = url.Parse(u.Query().Get("u"))
+	if err != nil {
+		return "", err
+	}
+
+	return u.Query().Get("v"), nil
 }
