@@ -115,9 +115,61 @@ func main() {
 		return
 	}
 
+	for {
+		messages, _ := srv.Users.Messages.List("me").LabelIds(socialLabelID).Do()
+		for _, m := range messages.Messages {
+			mm, err := srv.Users.Messages.Get("me", m.Id).Format("raw").Do()
+			if err != nil {
+				fmt.Println(err)
+				break
+			}
+
+			// アーカイブが最大12時間だから、開始時は余裕もって13時間前までのメールをチェックする
+			fmt.Println(time.Unix(mm.InternalDate/1000, 0))
+
+			html, err := getLiveStreamHTML(mm.Raw)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			stringReader := strings.NewReader(html)
+			doc, err := goquery.NewDocumentFromReader(stringReader)
+			if err != nil {
+				fmt.Print("scarapping failed")
+				continue
+			}
+
+			liveURL := ""
+			sss := doc.Find("a")
+			sss.EachWithBreak(func(_ int, s *goquery.Selection) bool {
+				url, exists := s.Attr("href")
+				if !exists || !strings.Contains(url, "watch") {
+					return true
+				}
+
+				liveURL = url
+				return false
+			})
+
+			vid, err := getVideoID(liveURL)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println(vid)
+		}
+	}
+}
+
+func getVideoIDsFromList(srv *gmail.Service, socialLabelID string) (vid []string, history string, err error) {
 	messages, _ := srv.Users.Messages.List("me").LabelIds(socialLabelID).Do()
 	for _, m := range messages.Messages {
-		mm, _ := srv.Users.Messages.Get("me", m.Id).Format("raw").Do()
+		mm, err := srv.Users.Messages.Get("me", m.Id).Format("raw").Do()
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
 
 		// アーカイブが最大12時間だから、開始時は余裕もって13時間前までのメールをチェックする
 		fmt.Println(time.Unix(mm.InternalDate/1000, 0))
