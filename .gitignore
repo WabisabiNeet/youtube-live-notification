@@ -14,3 +14,7 @@
 #credential data.
 credentials.json
 token.json
+
+# Exec result and debug data.
+superchat/
+debug/
