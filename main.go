@@ -138,7 +138,7 @@ func main() {
 		dbglog.Fatal(fmt.Sprintf("Unable to retrieve labels: %v", err))
 	}
 	if len(r.Labels) == 0 {
-		dbglog.Info("No labels found.")
+		dbglog.Error("No labels found.")
 		return
 	}
 
@@ -174,7 +174,6 @@ func main() {
 			}
 
 			for _, h := range histroyRes.History {
-				dbglog.Info(fmt.Sprintf("%+v", h))
 				vids, his, err := getVideoIDfromHistroy(srv, h)
 				if err != nil {
 					continue
@@ -193,19 +192,46 @@ func getVideoIDsFromList(srv *gmail.Service, socialLabelID string) (vids []strin
 	messages, _ := srv.Users.Messages.List("me").LabelIds(socialLabelID).Do()
 	for _, m := range messages.Messages {
 		vid, his, err := getVideoIDfromMail(srv, m)
+		if historyID < his {
+			historyID = his
+		}
 		if err != nil {
 			switch err.Error() {
 			case "invalid live stream start time":
 				return vids, historyID, nil
+			case "not live stream mail":
+				continue
 			default:
+				dbglog.Warn(err.Error())
 				continue
 			}
 		}
 
 		vids = append(vids, vid)
+	}
+
+	return vids, historyID, nil
+}
+
+func getVideoIDfromHistroy(srv *gmail.Service, h *gmail.History) (vids []string, historyID uint64, err error) {
+	for _, hma := range h.MessagesAdded {
+		vid, his, err := getVideoIDfromMail(srv, hma.Message)
 		if historyID < his {
 			historyID = his
 		}
+		if err != nil {
+			switch err.Error() {
+			case "invalid live stream start time":
+				return vids, historyID, nil
+			case "not live stream mail":
+				continue
+			default:
+				dbglog.Warn(err.Error())
+				continue
+			}
+		}
+
+		vids = append(vids, vid)
 	}
 
 	return vids, historyID, nil
@@ -219,18 +245,18 @@ func getVideoIDfromMail(srv *gmail.Service, m *gmail.Message) (vid string, histo
 
 	// アーカイブが最大12時間だから、開始時は余裕もって13時間前までのメールをチェックする
 	if time.Now().Add(time.Hour * -13).After(time.Unix(mm.InternalDate/1000, 0)) {
-		return "", 0, fmt.Errorf("invalid live stream start time")
+		return "", mm.HistoryId, fmt.Errorf("invalid live stream start time")
 	}
 
 	html, err := getLiveStreamHTML(mm.Raw)
 	if err != nil {
-		return "", 0, err
+		return "", mm.HistoryId, err
 	}
 
 	stringReader := strings.NewReader(html)
 	doc, err := goquery.NewDocumentFromReader(stringReader)
 	if err != nil {
-		return "", 0, errors.Wrap(err, html)
+		return "", mm.HistoryId, errors.Wrap(err, html)
 	}
 
 	liveURL := ""
@@ -247,41 +273,20 @@ func getVideoIDfromMail(srv *gmail.Service, m *gmail.Message) (vid string, histo
 
 	vid, err = parseVideoID(liveURL)
 	if err != nil {
-		return "", 0, errors.Wrap(err, html)
+		return "", mm.HistoryId, errors.Wrap(err, html)
 	}
 
 	return vid, mm.HistoryId, nil
 }
 
-func getVideoIDfromHistroy(srv *gmail.Service, h *gmail.History) (vids []string, historyID uint64, err error) {
-	for _, hma := range h.MessagesAdded {
-		vid, his, err := getVideoIDfromMail(srv, hma.Message)
-		if err != nil {
-			switch err.Error() {
-			case "invalid live stream start time":
-				return vids, historyID, nil
-			default:
-				continue
-			}
-		}
-
-		vids = append(vids, vid)
-		if historyID < his {
-			historyID = his
-		}
-	}
-}
-
 func getLiveStreamHTML(src string) (string, error) {
 	decoded, err := base64.URLEncoding.DecodeString(src)
 	if err != nil {
-		fmt.Println(err)
 		return "", err
 	}
 
 	enve, err := enmime.ReadEnvelope(strings.NewReader(string(decoded)))
 	if err != nil {
-		fmt.Println(err)
 		return "", err
 	}
 
@@ -299,8 +304,6 @@ func parseVideoID(liveURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Println(u)
-	fmt.Println(u.Query().Get("u"))
 
 	u, err = url.Parse(u.Query().Get("u"))
 	if err != nil {
