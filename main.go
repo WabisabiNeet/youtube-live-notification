@@ -175,6 +175,15 @@ func main() {
 
 			for _, h := range histroyRes.History {
 				dbglog.Info(fmt.Sprintf("%+v", h))
+				vids, his, err := getVideoIDfromHistroy(srv, h)
+				if err != nil {
+					continue
+				}
+				if historyID < his {
+					historyID = his
+				}
+
+				dbglog.Info(fmt.Sprintf("%v", vids))
 			}
 		}
 	}
@@ -242,6 +251,25 @@ func getVideoIDfromMail(srv *gmail.Service, m *gmail.Message) (vid string, histo
 	}
 
 	return vid, mm.HistoryId, nil
+}
+
+func getVideoIDfromHistroy(srv *gmail.Service, h *gmail.History) (vids []string, historyID uint64, err error) {
+	for _, hma := range h.MessagesAdded {
+		vid, his, err := getVideoIDfromMail(srv, hma.Message)
+		if err != nil {
+			switch err.Error() {
+			case "invalid live stream start time":
+				return vids, historyID, nil
+			default:
+				continue
+			}
+		}
+
+		vids = append(vids, vid)
+		if historyID < his {
+			historyID = his
+		}
+	}
 }
 
 func getLiveStreamHTML(src string) (string, error) {
