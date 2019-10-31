@@ -114,80 +114,6 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
-func main() {
-	b, err := ioutil.ReadFile("credentials.json") // Download own credentials.json from google developer console.
-	if err != nil {
-		dbglog.Fatal(fmt.Sprintf("Unable to read client secret file: %v", err))
-	}
-
-	// If modifying these scopes, delete your previously saved token.json.
-	config, err := google.ConfigFromJSON(b, gmail.GmailReadonlyScope)
-	if err != nil {
-		dbglog.Fatal(fmt.Sprintf("Unable to parse client secret file to config: %v", err))
-	}
-	client := getClient(config)
-
-	srv, err := gmail.New(client)
-	if err != nil {
-		dbglog.Fatal(fmt.Sprintf("Unable to retrieve Gmail client: %v", err))
-	}
-
-	user := "me"
-	r, err := srv.Users.Labels.List(user).Do()
-	if err != nil {
-		dbglog.Fatal(fmt.Sprintf("Unable to retrieve labels: %v", err))
-	}
-	if len(r.Labels) == 0 {
-		dbglog.Error("No labels found.")
-		return
-	}
-
-	socialLabelID := ""
-	for _, l := range r.Labels {
-		if l.Name != "CATEGORY_SOCIAL" {
-			continue
-		}
-		socialLabelID = l.Id
-	}
-	if socialLabelID == "" {
-		dbglog.Info("CATEGORY_SOCIAL can not found.")
-		return
-	}
-
-	for {
-		vids, historyID, err := getVideoIDsFromList(srv, socialLabelID)
-		if err != nil {
-			continue
-		}
-
-		dbglog.Info(fmt.Sprintf("%v", vids))
-
-		for range time.Tick(time.Minute) {
-			dbglog.Info("history timer tick.")
-			histroyRes, err := srv.Users.History.List("me").
-				StartHistoryId(historyID).
-				HistoryTypes("messageAdded").
-				LabelId(socialLabelID).
-				Do()
-			if err != nil {
-				continue
-			}
-
-			for _, h := range histroyRes.History {
-				vids, his, err := getVideoIDfromHistroy(srv, h)
-				if err != nil {
-					continue
-				}
-				if historyID < his {
-					historyID = his
-				}
-
-				dbglog.Info(fmt.Sprintf("%v", vids))
-			}
-		}
-	}
-}
-
 func getVideoIDsFromList(srv *gmail.Service, socialLabelID string) (vids []string, historyID uint64, err error) {
 	messages, _ := srv.Users.Messages.List("me").LabelIds(socialLabelID).Do()
 	for _, m := range messages.Messages {
@@ -311,4 +237,78 @@ func parseVideoID(liveURL string) (string, error) {
 	}
 
 	return u.Query().Get("v"), nil
+}
+
+func main() {
+	b, err := ioutil.ReadFile("credentials.json") // Download own credentials.json from google developer console.
+	if err != nil {
+		dbglog.Fatal(fmt.Sprintf("Unable to read client secret file: %v", err))
+	}
+
+	// If modifying these scopes, delete your previously saved token.json.
+	config, err := google.ConfigFromJSON(b, gmail.GmailReadonlyScope)
+	if err != nil {
+		dbglog.Fatal(fmt.Sprintf("Unable to parse client secret file to config: %v", err))
+	}
+	client := getClient(config)
+
+	srv, err := gmail.New(client)
+	if err != nil {
+		dbglog.Fatal(fmt.Sprintf("Unable to retrieve Gmail client: %v", err))
+	}
+
+	user := "me"
+	r, err := srv.Users.Labels.List(user).Do()
+	if err != nil {
+		dbglog.Fatal(fmt.Sprintf("Unable to retrieve labels: %v", err))
+	}
+	if len(r.Labels) == 0 {
+		dbglog.Error("No labels found.")
+		return
+	}
+
+	socialLabelID := ""
+	for _, l := range r.Labels {
+		if l.Name != "CATEGORY_SOCIAL" {
+			continue
+		}
+		socialLabelID = l.Id
+	}
+	if socialLabelID == "" {
+		dbglog.Info("CATEGORY_SOCIAL can not found.")
+		return
+	}
+
+	for {
+		vids, historyID, err := getVideoIDsFromList(srv, socialLabelID)
+		if err != nil {
+			continue
+		}
+
+		dbglog.Info(fmt.Sprintf("%v", vids))
+
+		for range time.Tick(time.Minute) {
+			dbglog.Info("history timer tick.")
+			histroyRes, err := srv.Users.History.List("me").
+				StartHistoryId(historyID).
+				HistoryTypes("messageAdded").
+				LabelId(socialLabelID).
+				Do()
+			if err != nil {
+				continue
+			}
+
+			for _, h := range histroyRes.History {
+				vids, his, err := getVideoIDfromHistroy(srv, h)
+				if err != nil {
+					continue
+				}
+				if historyID < his {
+					historyID = his
+				}
+
+				dbglog.Info(fmt.Sprintf("%v", vids))
+			}
+		}
+	}
 }
